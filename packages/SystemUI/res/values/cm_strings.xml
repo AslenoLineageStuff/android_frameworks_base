@@ -131,4 +131,7 @@
 
     <!-- Lineage clock -->
     <string name="clock_title_lineage" translatable="false">LineageOS</string>
+
+    <!--Screenrecord Tile-->
+    <string name="screenrecorder_title_tile">Screenrecord</string>
 </resources>
