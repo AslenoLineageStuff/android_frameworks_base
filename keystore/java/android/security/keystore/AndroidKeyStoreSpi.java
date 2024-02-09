@@ -65,6 +65,7 @@ import java.util.Iterator;
 import java.util.Set;
 
 import javax.crypto.SecretKey;
+import com.android.internal.util.custom.PixelPropsUtils;
 
 import com.android.internal.util.custom.PixelPropsUtils;
 
@@ -115,8 +116,8 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
 
     @Override
     public Certificate[] engineGetCertificateChain(String alias) {
-        PixelPropsUtils.onEngineGetCertificateChain();
 
+        PixelPropsUtils.onEngineGetCertificateChain();
         if (alias == null) {
             throw new NullPointerException("alias == null");
         }
