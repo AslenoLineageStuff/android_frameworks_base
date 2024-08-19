@@ -274,14 +274,19 @@ public class PixelPropsUtils {
 
     private static void spoofBuildGms() {
         // Alter build parameters to avoid hardware attestation enforcement
-        setPropValue("BRAND", "Hisense");
-        setPropValue("MANUFACTURER", "Hisense");
-        setPropValue("DEVICE", "HS6735MT");
-        setPropValue("ID", "MRA58K");
-        setPropValue("FINGERPRINT", "Hisense/F30/HS6735MT:6.0/MRA58K/L1228.6.01.01:user/release-keys");
-        setPropValue("MODEL", "Hisense F30");
-        setPropValue("PRODUCT", "F30");
-        setVersionFieldString("SECURITY_PATCH", "2016-02-01");
+        setPropValue("MANUFACTURER", "Google");
+        setPropValue("MODEL", "Pixel 9 Pro");
+        setPropValue("FINGERPRINT", "google/caiman/caiman:14/AD1A.240530.047.U1/12150698:user/release-keys");
+        setPropValue("BRAND", "google");
+        setPropValue("PRODUCT", "caiman");
+        setPropValue("DEVICE", "caiman");
+        setVersionFieldString("RELEASE", "14");
+        setPropValue("ID", "AD1A.240530.047.U1");
+        setVersionFieldString("INCREMENTAL", "12150698");
+        setPropValue("TYPE", "user");
+        setPropValue("TAGS", "release-keys");
+        setVersionFieldString("SECURITY_PATCH", "2024-08-05");
+        setVersionFieldInt("DEVICE_INITIAL_SDK_INT", 25);
     }
 
     private static boolean isCallerSafetyNet() {
