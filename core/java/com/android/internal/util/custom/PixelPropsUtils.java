@@ -30,7 +30,6 @@ import java.util.Map;
 public class PixelPropsUtils {
 
     private static final String TAG = PixelPropsUtils.class.getSimpleName();
-    private static final String SPOOF_PIHOOKS_PI = "persist.sys.pihooks.pi";
     private static final String DEVICE = "ro.lineage.device";
     private static final boolean DEBUG = false;
 
@@ -252,6 +251,8 @@ public class PixelPropsUtils {
     }
 
     private static void spoofBuildGms() {
+        if (!SystemProperties.getBoolean(SPOOF_PIXEL_PI, true))
+            return;
         // Alter build parameters to pixel for avoiding hardware attestation enforcement
         setPropValue("MANUFACTURER", "Google");
         setPropValue("MODEL", "Pixel 6");
@@ -274,6 +275,7 @@ public class PixelPropsUtils {
 
     public static void onEngineGetCertificateChain() {
         if (!SystemProperties.getBoolean(SPOOF_PIXEL_PI, true))
+            return;
         // Check stack for SafetyNet or Play Integrity
         if (isCallerSafetyNet() || sIsFinsky) {
             Log.i(TAG, "Blocked key attestation sIsGms=" + sIsGms + " sIsFinsky=" + sIsFinsky);
