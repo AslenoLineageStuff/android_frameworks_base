@@ -253,16 +253,16 @@ public class PixelPropsUtils {
         // Alter build parameters to pixel for avoiding hardware attestation enforcement
         setPropValue("MANUFACTURER", "Google");
         setPropValue("MODEL", "Pixel 6");
-        setPropValue("FINGERPRINT", "google/oriole_beta/oriole:15/BP11.241025.006/12620009:user/release-keys");
+        setPropValue("FINGERPRINT", "google/oriole_beta/oriole:16/BP22.250221.010/13193326:user/release-keys");
         setPropValue("BRAND", "google");
         setPropValue("PRODUCT", "oriole_beta");
         setPropValue("DEVICE", "oriole");
-        setPropValue("VERSION.RELEASE", "15");
-        setPropValue("ID", "BP11.241025.006");
-        setPropValue("VERSION.INCREMENTAL", "12620009");
+        setPropValue("VERSION.RELEASE", "16");
+        setPropValue("ID", "BP22.250221.010");
+        setPropValue("VERSION.INCREMENTAL", "13193326");
         setPropValue("TYPE", "user");
         setPropValue("TAGS", "release-keys");
-        setPropValue("VERSION.SECURITY_PATCH", "2024-11-05");
+        setPropValue("VERSION.SECURITY_PATCH", "2025-03-05");
         setPropValue("VERSION.DEVICE_INITIAL_SDK_INT", "21");
 }
     private static boolean isCallerSafetyNet() {
