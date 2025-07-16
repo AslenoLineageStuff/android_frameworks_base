@@ -35,7 +35,6 @@ public class PixelPropsUtils {
     private static final String DEVICE = "ro.lineage.device";
     private static final boolean DEBUG = false;
 
-    private static final String SPOOF_PIXEL_PI = "persist.sys.pixelprops.pi";
     private static final String SPOOF_PIXEL_GAMES = "persist.sys.pixelprops.games";
     private static final String SPOOF_PIXEL_GPHOTOS = "persist.sys.pixelprops.gphotos";
     private static final String SPOOF_PIXEL_NETFLIX = "persist.sys.pixelprops.netflix";
@@ -168,8 +167,6 @@ public class PixelPropsUtils {
             "com.proximabeta.mf.uamo"
     };
 
-    private static volatile boolean sIsFinsky = false;
-
     static {
         propsToKeep = new HashMap<>();
         propsToKeep.put("com.google.android.settings.intelligence", new ArrayList<>(Collections.singletonList("FINGERPRINT")));
@@ -260,16 +257,6 @@ public class PixelPropsUtils {
                         !SystemProperties.getBoolean(SPOOF_PIXEL_NETFLIX, false)) {
                     if (DEBUG) Log.d(TAG, "Netflix spoofing disabled by system prop");
                     return;
-            } else if (packageName.equals("com.android.vending")) {
-                sIsFinsky = true;
-                return;
-            } else if (packageName.equals("com.google.android.gms")) {
-                final String processName = Application.getProcessName().toLowerCase();
-                if (processName.contains("unstable")) {
-                    spoofBuildGms();
-                    return;
-                }
-                return;
             }
             // Set proper indexing fingerprint
             if (packageName.equals("com.google.android.settings.intelligence")) {
@@ -365,40 +352,6 @@ public class PixelPropsUtils {
             field.setAccessible(false);
         } catch (Exception e) {
             Log.e(TAG, "Failed to set prop " + key, e);
-        }
-    }
-
-    private static void spoofBuildGms() {
-        if (!SystemProperties.getBoolean(SPOOF_PIXEL_PI, true))
-            return;
-        // Alter build parameters to avoid hardware attestation enforcement
-        setPropValue("MANUFACTURER", "Google");
-        setPropValue("MODEL", "Pixel 6");
-        setPropValue("FINGERPRINT", "google/oriole_beta/oriole:16/BP22.250325.012/13467521:user/release-keys");
-        setPropValue("BRAND", "google");
-        setPropValue("PRODUCT", "oriole_beta");
-        setPropValue("DEVICE", "oriole");
-        setPropValue("VERSION.RELEASE", "16");
-        setPropValue("ID", "BP22.250325.012");
-        setPropValue("VERSION.INCREMENTAL", "13467521");
-        setPropValue("TYPE", "user");
-        setPropValue("TAGS", "release-keys");
-        setPropValue("VERSION.SECURITY_PATCH", "2025-04-05");
-        setPropValue("VERSION.DEVICE_INITIAL_SDK_INT", "21");
-    }
-
-    private static boolean isCallerSafetyNet() {
-        return Arrays.stream(Thread.currentThread().getStackTrace())
-                .anyMatch(elem -> elem.getClassName().contains("DroidGuard"));
-    }
-
-    public static void onEngineGetCertificateChain() {
-        if (!SystemProperties.getBoolean(SPOOF_PIXEL_PI, true))
-            return;
-        // Check stack for SafetyNet or Play Integrity
-        if (isCallerSafetyNet() || sIsFinsky) {
-            Log.i(TAG, "Blocked key attestation");
-            throw new UnsupportedOperationException();
         }
     }
 }
