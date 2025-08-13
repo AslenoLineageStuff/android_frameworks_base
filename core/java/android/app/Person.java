@@ -19,10 +19,12 @@ package android.app;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.graphics.drawable.Icon;
+import android.net.Uri;
 import android.os.Parcel;
 import android.os.Parcelable;
 
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * Provides an immutable reference to an entity that appears repeatedly on different surfaces of the
@@ -122,6 +124,19 @@ public final class Person implements Parcelable {
         return "";
     }
 
+    /**
+     * @return the URI associated with the {@link #getIcon()} for this person, iff the icon exists
+     * and is URI based.
+     * @hide
+     */
+    @Nullable
+    public Uri getIconUri() {
+        if (mIcon != null && mIcon.getType() == Icon.TYPE_URI) {
+            return mIcon.getUri();
+        }
+        return null;
+    }
+
     @Override
     public boolean equals(Object obj) {
         if (obj instanceof Person) {
@@ -160,6 +175,22 @@ public final class Person implements Parcelable {
         dest.writeString(mKey);
         dest.writeBoolean(mIsImportant);
         dest.writeBoolean(mIsBot);
+    }
+
+    /**
+     * Note all {@link Uri} that are referenced internally, with the expectation that Uri permission
+     * grants will need to be issued to ensure the recipient of this object is able to render its
+     * contents.
+     * See b/281044385 for more context and examples about what happens when this isn't done
+     * correctly.
+     *
+     * @hide
+     */
+    public void visitUris(@NonNull Consumer<Uri> visitor) {
+        visitor.accept(getIconUri());
+        if (mUri != null && !mUri.isEmpty()) {
+            visitor.accept(Uri.parse(mUri));
+        }
     }
 
     /** Builder for the immutable {@link Person} class. */

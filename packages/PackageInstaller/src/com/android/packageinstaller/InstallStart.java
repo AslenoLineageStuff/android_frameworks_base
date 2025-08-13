@@ -21,6 +21,7 @@ import static com.android.packageinstaller.PackageUtil.getMaxTargetSdkVersionFor
 import android.Manifest;
 import android.annotation.Nullable;
 import android.app.Activity;
+import android.app.ActivityTaskManager;
 import android.app.ActivityManager;
 import android.app.AppGlobals;
 import android.content.ContentResolver;
@@ -28,6 +29,7 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageInstaller;
+import android.content.pm.PackageInstaller.SessionInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.net.Uri;
@@ -44,15 +46,22 @@ public class InstallStart extends Activity {
     private static final String LOG_TAG = InstallStart.class.getSimpleName();
 
     private static final String DOWNLOADS_AUTHORITY = "downloads";
+    private PackageManager mPackageManager;
     private IPackageManager mIPackageManager;
     private boolean mAbortInstall = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        mPackageManager = getPackageManager();
         mIPackageManager = AppGlobals.getPackageManager();
         Intent intent = getIntent();
-        String callingPackage = getCallingPackage();
+        String callingPackage;
+        try {
+            callingPackage = ActivityTaskManager.getService().getLaunchedFromPackage(getActivityToken());
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
 
         final boolean isSessionInstall =
                 PackageInstaller.ACTION_CONFIRM_INSTALL.equals(intent.getAction());
@@ -60,12 +69,14 @@ public class InstallStart extends Activity {
         // If the activity was started via a PackageInstaller session, we retrieve the calling
         // package from that session
         final int sessionId = (isSessionInstall
-                ? intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
-                : -1);
-        if (callingPackage == null && sessionId != -1) {
-            PackageInstaller packageInstaller = getPackageManager().getPackageInstaller();
+                ? intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, SessionInfo.INVALID_ID)
+                : SessionInfo.INVALID_ID);
+        if (sessionId != SessionInfo.INVALID_ID) {
+            PackageInstaller packageInstaller = mPackageManager.getPackageInstaller();
             PackageInstaller.SessionInfo sessionInfo = packageInstaller.getSessionInfo(sessionId);
-            callingPackage = (sessionInfo != null) ? sessionInfo.getInstallerPackageName() : null;
+            if (sessionInfo != null) {
+                callingPackage = sessionInfo.getInstallerPackageName();
+            }
         }
 
         final ApplicationInfo sourceInfo = getSourceInfo(callingPackage);
@@ -162,7 +173,7 @@ public class InstallStart extends Activity {
     private ApplicationInfo getSourceInfo(@Nullable String callingPackage) {
         if (callingPackage != null) {
             try {
-                return getPackageManager().getApplicationInfo(callingPackage, 0);
+                return mPackageManager.getApplicationInfo(callingPackage, 0);
             } catch (PackageManager.NameNotFoundException ex) {
                 // ignore
             }
@@ -213,7 +224,7 @@ public class InstallStart extends Activity {
     }
 
     private boolean isSystemDownloadsProvider(int uid) {
-        final ProviderInfo downloadProviderPackage = getPackageManager().resolveContentProvider(
+        final ProviderInfo downloadProviderPackage = mPackageManager.resolveContentProvider(
                 DOWNLOADS_AUTHORITY, 0);
         if (downloadProviderPackage == null) {
             // There seems to be no currently enabled downloads provider on the system.

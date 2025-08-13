@@ -48,6 +48,7 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.logging.MetricsLogger;
 import com.android.internal.util.Preconditions;
 import com.android.internal.util.XmlUtils;
+import com.android.server.uri.UriGrantsManagerInternal;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -74,6 +75,8 @@ public class PreferencesHelper implements RankingConfig {
 
     @VisibleForTesting
     static final int NOTIFICATION_CHANNEL_COUNT_LIMIT = 50000;
+    @VisibleForTesting
+    static final int NOTIFICATION_CHANNEL_GROUP_COUNT_LIMIT = 6000;
 
     @VisibleForTesting
     static final String TAG_RANKING = "ranking";
@@ -132,6 +135,7 @@ public class PreferencesHelper implements RankingConfig {
     private final PackageManager mPm;
     private final RankingHandler mRankingHandler;
     private final ZenModeHelper mZenModeHelper;
+    private final UriGrantsManagerInternal mUgmInternal;
 
     private SparseBooleanArray mBadgingEnabled;
     private boolean mBubblesEnabled = DEFAULT_ALLOW_BUBBLE;
@@ -139,11 +143,12 @@ public class PreferencesHelper implements RankingConfig {
     private boolean mHideSilentStatusBarIcons = DEFAULT_HIDE_SILENT_STATUS_BAR_ICONS;
 
     public PreferencesHelper(Context context, PackageManager pm, RankingHandler rankingHandler,
-            ZenModeHelper zenHelper) {
+            ZenModeHelper zenHelper, UriGrantsManagerInternal ugmInternal) {
         mContext = context;
         mZenModeHelper = zenHelper;
         mRankingHandler = rankingHandler;
         mPm = pm;
+        mUgmInternal = ugmInternal;
 
         updateBadgingEnabled();
         updateBubblesEnabled();
@@ -184,6 +189,7 @@ public class PreferencesHelper implements RankingConfig {
                                 }
                             }
                             boolean skipWarningLogged = false;
+                            boolean skipGroupWarningLogged = false;
 
                             PackagePreferences r = getOrCreatePackagePreferencesLocked(name, uid,
                                     XmlUtils.readIntAttribute(
@@ -220,6 +226,14 @@ public class PreferencesHelper implements RankingConfig {
                                 String tagName = parser.getName();
                                 // Channel groups
                                 if (TAG_GROUP.equals(tagName)) {
+                                    if (r.groups.size() >= NOTIFICATION_CHANNEL_GROUP_COUNT_LIMIT) {
+                                        if (!skipGroupWarningLogged) {
+                                            Slog.w(TAG, "Skipping further groups for " + r.pkg
+                                                    + "; app has too many");
+                                            skipGroupWarningLogged = true;
+                                        }
+                                        continue;
+                                    }
                                     String id = parser.getAttributeValue(null, ATT_ID);
                                     CharSequence groupName = parser.getAttributeValue(null,
                                             ATT_NAME);
@@ -610,6 +624,9 @@ public class PreferencesHelper implements RankingConfig {
             }
             if (fromTargetApp) {
                 group.setBlocked(false);
+                if (r.groups.size() >= NOTIFICATION_CHANNEL_GROUP_COUNT_LIMIT) {
+                    throw new IllegalStateException("Limit exceed; cannot create more groups");
+                }
             }
             final NotificationChannelGroup oldGroup = r.groups.get(group.getId());
             if (!group.equals(oldGroup)) {
@@ -731,6 +748,12 @@ public class PreferencesHelper implements RankingConfig {
                 channel.setLockscreenVisibility(r.visibility);
             }
             clearLockedFieldsLocked(channel);
+
+            // Verify that the app has permission to read the sound Uri
+            // Only check for new channels, as regular apps can only set sound
+            // before creating. See: {@link NotificationChannel#setSound}
+            PermissionHelper.grantUriPermission(mUgmInternal, channel.getSound(), uid);
+
             channel.setImportanceLockedByOEM(r.oemLockedImportance);
             if (!channel.isImportanceLockedByOEM()) {
                 if (r.futureOemLockedChannels.remove(channel.getId())) {

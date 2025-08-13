@@ -28,6 +28,7 @@ import android.app.usage.UsageStatsManagerInternal;
 import android.appwidget.AppWidgetProviderInfo;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
+import android.content.ContentProvider;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -104,6 +105,7 @@ import com.android.internal.util.StatLogger;
 import com.android.server.LocalServices;
 import com.android.server.SystemService;
 import com.android.server.pm.ShortcutUser.PackageWithUser;
+import com.android.server.uri.UriGrantsManagerInternal;
 
 import libcore.io.IoUtils;
 
@@ -313,13 +315,14 @@ public class ShortcutService extends IShortcutService.Stub {
     private CompressFormat mIconPersistFormat;
     private int mIconPersistQuality;
 
-    private int mSaveDelayMillis;
+    int mSaveDelayMillis;
 
     private final IPackageManager mIPackageManager;
     private final PackageManagerInternal mPackageManagerInternal;
     private final UserManagerInternal mUserManagerInternal;
     private final UsageStatsManagerInternal mUsageStatsManagerInternal;
     private final ActivityManagerInternal mActivityManagerInternal;
+    private final UriGrantsManagerInternal mUriGrantsManagerInternal;
 
     private final ShortcutRequestPinProcessor mShortcutRequestPinProcessor;
     private final ShortcutBitmapSaver mShortcutBitmapSaver;
@@ -441,6 +444,8 @@ public class ShortcutService extends IShortcutService.Stub {
                 LocalServices.getService(UsageStatsManagerInternal.class));
         mActivityManagerInternal = Preconditions.checkNotNull(
                 LocalServices.getService(ActivityManagerInternal.class));
+        mUriGrantsManagerInternal = Preconditions.checkNotNull(
+                LocalServices.getService(UriGrantsManagerInternal.class));
 
         mShortcutRequestPinProcessor = new ShortcutRequestPinProcessor(this, mLock);
         mShortcutBitmapSaver = new ShortcutBitmapSaver(this);
@@ -1561,6 +1566,19 @@ public class ShortcutService extends IShortcutService.Stub {
         mContext.enforceCallingPermission(permission, message);
     }
 
+    private void verifyCallerUserId(@UserIdInt int userId) {
+        if (isCallerSystem()) {
+            return; // no check
+        }
+
+        final int callingUid = injectBinderCallingUid();
+
+        // Otherwise, make sure the arguments are valid.
+        if (UserHandle.getUserId(callingUid) != userId) {
+            throw new SecurityException("Invalid user-ID");
+        }
+    }
+
     private void verifyCaller(@NonNull String packageName, @UserIdInt int userId) {
         Preconditions.checkStringNotEmpty(packageName, "packageName");
 
@@ -1588,6 +1606,10 @@ public class ShortcutService extends IShortcutService.Stub {
         if (!Objects.equals(callerPackage, si.getPackage())) {
             android.util.EventLog.writeEvent(0x534e4554, "109824443", -1, "");
             throw new SecurityException("Shortcut package name mismatch");
+        }
+        final int callingUid = injectBinderCallingUid();
+        if (UserHandle.getUserId(callingUid) != si.getUserId()) {
+            throw new SecurityException("User-ID in shortcut doesn't match the caller");
         }
     }
 
@@ -1693,9 +1715,30 @@ public class ShortcutService extends IShortcutService.Stub {
         }
         if (shortcut.getIcon() != null) {
             ShortcutInfo.validateIcon(shortcut.getIcon());
+            validateIconURI(shortcut);
         }
 
         shortcut.replaceFlags(0);
+    }
+
+    // Validates the calling process has permission to access shortcut icon's image uri
+    private void validateIconURI(@NonNull final ShortcutInfo si) {
+        final int callingUid = injectBinderCallingUid();
+        final Icon icon = si.getIcon();
+        if (icon == null) {
+            // There's no icon in this shortcut, nothing to validate here.
+            return;
+        }
+        int iconType = icon.getType();
+        if (iconType != Icon.TYPE_URI) {
+            // The icon is not URI-based, nothing to validate.
+            return;
+        }
+        final Uri uri = icon.getUri();
+        mUriGrantsManagerInternal.checkGrantUriPermission(callingUid, si.getPackage(),
+                ContentProvider.getUriWithoutUserId(uri),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                ContentProvider.getUserIdFromUri(uri, UserHandle.getUserId(callingUid)));
     }
 
     private void fixUpIncomingShortcutInfo(@NonNull ShortcutInfo shortcut, boolean forUpdate) {
@@ -2255,10 +2298,11 @@ public class ShortcutService extends IShortcutService.Stub {
                     shortcutId, packageName, userId));
         }
 
+        final ShortcutPackage ps;
         synchronized (mLock) {
             throwIfUserLockedL(userId);
 
-            final ShortcutPackage ps = getPackageShortcutsForPublisherLocked(packageName, userId);
+            ps = getPackageShortcutsForPublisherLocked(packageName, userId);
 
             if (ps.findShortcutById(shortcutId) == null) {
                 Log.w(TAG, String.format("reportShortcutUsed: package %s doesn't have shortcut %s",
@@ -2267,16 +2311,13 @@ public class ShortcutService extends IShortcutService.Stub {
             }
         }
 
-        final long token = injectClearCallingIdentity();
-        try {
-            mUsageStatsManagerInternal.reportShortcutUsage(packageName, shortcutId, userId);
-        } finally {
-            injectRestoreCallingIdentity(token);
-        }
+        ps.reportShortcutUsed(mUsageStatsManagerInternal, shortcutId);
     }
 
     @Override
     public boolean isRequestPinItemSupported(int callingUserId, int requestType) {
+        verifyCallerUserId(callingUserId);
+
         final long token = injectClearCallingIdentity();
         try {
             return mShortcutRequestPinProcessor

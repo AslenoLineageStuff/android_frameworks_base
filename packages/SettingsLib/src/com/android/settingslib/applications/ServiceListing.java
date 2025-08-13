@@ -35,6 +35,7 @@ import android.util.Slog;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Class for managing services matching a given intent and requesting a given permission.
@@ -50,11 +51,12 @@ public class ServiceListing {
     private final HashSet<ComponentName> mEnabledServices = new HashSet<>();
     private final List<ServiceInfo> mServices = new ArrayList<>();
     private final List<Callback> mCallbacks = new ArrayList<>();
+    private final Predicate mValidator;
 
     private boolean mListening;
 
     private ServiceListing(Context context, String tag,
-            String setting, String intentAction, String permission, String noun) {
+            String setting, String intentAction, String permission, String noun, Predicate validator) {
         mContentResolver = context.getContentResolver();
         mContext = context;
         mTag = tag;
@@ -62,6 +64,7 @@ public class ServiceListing {
         mIntentAction = intentAction;
         mPermission = permission;
         mNoun = noun;
+        mValidator = validator;
     }
 
     public void addCallback(Callback callback) {
@@ -125,24 +128,41 @@ public class ServiceListing {
         mServices.clear();
         final int user = ActivityManager.getCurrentUser();
 
+        int flags = PackageManager.GET_SERVICES | PackageManager.GET_META_DATA;
+
         final PackageManager pmWrapper = mContext.getPackageManager();
+        // Add requesting apps, with full validation
         List<ResolveInfo> installedServices = pmWrapper.queryIntentServicesAsUser(
-                new Intent(mIntentAction),
-                PackageManager.GET_SERVICES | PackageManager.GET_META_DATA,
-                user);
+                new Intent(mIntentAction), flags, user);
 
         for (ResolveInfo resolveInfo : installedServices) {
             ServiceInfo info = resolveInfo.serviceInfo;
 
-            if (!mPermission.equals(info.permission)) {
-                Slog.w(mTag, "Skipping " + mNoun + " service "
-                        + info.packageName + "/" + info.name
-                        + ": it does not require the permission "
-                        + mPermission);
-                continue;
+            if (!mEnabledServices.contains(info.getComponentName())) {
+                if (!mPermission.equals(info.permission)) {
+                    Slog.w(mTag, "Skipping " + mNoun + " service "
+                            + info.packageName + "/" + info.name
+                            + ": it does not require the permission "
+                            + mPermission);
+                    continue;
+                }
+                if (mValidator != null && !mValidator.test(info)) {
+                    continue;
+                }
+                mServices.add(info);
             }
-            mServices.add(info);
         }
+
+        // Add all apps with access, in case prior approval was granted without full validation
+        for (ComponentName cn : mEnabledServices) {
+            List<ResolveInfo> enabledServices = pmWrapper.queryIntentServicesAsUser(
+                    new Intent().setComponent(cn), flags, user);
+            for (ResolveInfo resolveInfo : enabledServices) {
+                ServiceInfo info = resolveInfo.serviceInfo;
+                mServices.add(info);
+            }
+        }
+
         for (Callback callback : mCallbacks) {
             callback.onServicesReloaded(mServices);
         }
@@ -186,6 +206,7 @@ public class ServiceListing {
         private String mIntentAction;
         private String mPermission;
         private String mNoun;
+        private Predicate mValidator;
 
         public Builder(Context context) {
             mContext = context;
@@ -216,8 +237,13 @@ public class ServiceListing {
             return this;
         }
 
+        public Builder setValidator(Predicate<ServiceInfo> validator) {
+            mValidator = validator;
+            return this;
+        }
+
         public ServiceListing build() {
-            return new ServiceListing(mContext, mTag, mSetting, mIntentAction, mPermission, mNoun);
+            return new ServiceListing(mContext, mTag, mSetting, mIntentAction, mPermission, mNoun, mValidator);
         }
     }
 }

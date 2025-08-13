@@ -20,9 +20,11 @@ import static org.xmlpull.v1.XmlPullParser.END_DOCUMENT;
 import static org.xmlpull.v1.XmlPullParser.START_TAG;
 
 import android.Manifest;
+import android.annotation.NonNull;
 import android.app.ActivityManager;
 import android.app.AppGlobals;
 import android.app.AppOpsManager;
+import android.app.BroadcastOptions;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PackageDeleteObserver;
@@ -41,7 +43,9 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageInstaller.SessionInfo;
 import android.content.pm.PackageInstaller.SessionParams;
+import android.content.pm.PackageItemInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageParser;
 import android.content.pm.ParceledListSlice;
 import android.content.pm.VersionedPackage;
 import android.graphics.Bitmap;
@@ -125,8 +129,10 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
     private static final long MAX_AGE_MILLIS = 3 * DateUtils.DAY_IN_MILLIS;
     /** Automatically destroy staged sessions that have not changed state in this time */
     private static final long MAX_TIME_SINCE_UPDATE_MILLIS = 7 * DateUtils.DAY_IN_MILLIS;
-    /** Upper bound on number of active sessions for a UID */
-    private static final long MAX_ACTIVE_SESSIONS = 1024;
+    /** Upper bound on number of active sessions for a UID that has INSTALL_PACKAGES */
+    private static final long MAX_ACTIVE_SESSIONS_WITH_PERMISSION = 1024;
+    /** Upper bound on number of active sessions for a UID without INSTALL_PACKAGES */
+    private static final long MAX_ACTIVE_SESSIONS_NO_PERMISSION = 50;
     /** Upper bound on number of historical sessions for a UID */
     private static final long MAX_HISTORICAL_SESSIONS = 1048576;
     /** Destroy sessions older than this on storage free request */
@@ -534,6 +540,30 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
             throw new SecurityException("User restriction prevents installing");
         }
 
+        // App package name and label length is restricted so that really long strings aren't
+        // written to disk.
+        if (params.appPackageName != null && !isValidPackageName(params.appPackageName)) {
+            params.appPackageName = null;
+        }
+
+        params.appLabel = TextUtils.trimToSize(params.appLabel,
+                PackageItemInfo.MAX_SAFE_LABEL_LENGTH);
+
+        // Validate requested installer package name.
+        if (params.installerPackageName != null && !isValidPackageName(
+                params.installerPackageName)) {
+            params.installerPackageName = null;
+        }
+
+        // Validate installer package name.
+        if (installerPackageName != null && !isValidPackageName(installerPackageName)) {
+            installerPackageName = null;
+        }
+
+        String requestedInstallerPackageName =
+                params.installerPackageName != null ? params.installerPackageName
+                        : installerPackageName;
+
         if ((callingUid == Process.SHELL_UID) || (callingUid == Process.ROOT_UID)) {
             params.installFlags |= PackageManager.INSTALL_FROM_ADB;
 
@@ -637,12 +667,23 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
             }
         }
 
+        if (params.whitelistedRestrictedPermissions != null) {
+            mPermissionManager.retainHardAndSoftRestrictedPermissions(
+                    params.whitelistedRestrictedPermissions);
+        }
+
         final int sessionId;
         final PackageInstallerSession session;
         synchronized (mSessions) {
             // Sanity check that installer isn't going crazy
             final int activeCount = getSessionCount(mSessions, callingUid);
-            if (activeCount >= MAX_ACTIVE_SESSIONS) {
+            if (mContext.checkCallingOrSelfPermission(Manifest.permission.INSTALL_PACKAGES)
+                    == PackageManager.PERMISSION_GRANTED) {
+                if (activeCount >= MAX_ACTIVE_SESSIONS_WITH_PERMISSION) {
+                    throw new IllegalStateException(
+                            "Too many active sessions for UID " + callingUid);
+                }
+            } else if (activeCount >= MAX_ACTIVE_SESSIONS_NO_PERMISSION) {
                 throw new IllegalStateException(
                         "Too many active sessions for UID " + callingUid);
             }
@@ -773,6 +814,19 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
         } while (n++ < 32);
 
         throw new IllegalStateException("Failed to allocate session ID");
+    }
+
+    private static boolean isValidPackageName(@NonNull String packageName) {
+        if (packageName.length() > SessionParams.MAX_PACKAGE_NAME_LENGTH) {
+            return false;
+        }
+        // "android" is a valid package name
+        String errorMessage = PackageParser.validateName(
+                packageName, /* requireSeparator= */ false, /* requireFilename */ true);
+        if (errorMessage != null) {
+            return false;
+        }
+        return true;
     }
 
     private File getTmpSessionDir(String volumeUuid) {
@@ -1021,7 +1075,10 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
                     PackageInstaller.STATUS_PENDING_USER_ACTION);
             fillIn.putExtra(Intent.EXTRA_INTENT, intent);
             try {
-                mTarget.sendIntent(mContext, 0, fillIn, null, null);
+                final BroadcastOptions options = BroadcastOptions.makeBasic();
+                options.setPendingIntentBackgroundActivityLaunchAllowed(false);
+                mTarget.sendIntent(mContext, 0, fillIn, null /* onFinished*/,
+                        null /* handler */, null /* requiredPermission */, options.toBundle());
             } catch (SendIntentException ignored) {
             }
         }
@@ -1046,7 +1103,10 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
                     PackageManager.deleteStatusToString(returnCode, msg));
             fillIn.putExtra(PackageInstaller.EXTRA_LEGACY_STATUS, returnCode);
             try {
-                mTarget.sendIntent(mContext, 0, fillIn, null, null);
+                final BroadcastOptions options = BroadcastOptions.makeBasic();
+                options.setPendingIntentBackgroundActivityLaunchAllowed(false);
+                mTarget.sendIntent(mContext, 0, fillIn, null /* onFinished*/,
+                        null /* handler */, null /* requiredPermission */, options.toBundle());
             } catch (SendIntentException ignored) {
             }
         }
@@ -1076,7 +1136,10 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
                     PackageInstaller.STATUS_PENDING_USER_ACTION);
             fillIn.putExtra(Intent.EXTRA_INTENT, intent);
             try {
-                mTarget.sendIntent(mContext, 0, fillIn, null, null);
+                final BroadcastOptions options = BroadcastOptions.makeBasic();
+                options.setPendingIntentBackgroundActivityLaunchAllowed(false);
+                mTarget.sendIntent(mContext, 0, fillIn, null /* onFinished*/,
+                        null /* handler */, null /* requiredPermission */, options.toBundle());
             } catch (SendIntentException ignored) {
             }
         }
@@ -1116,7 +1179,10 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
                 }
             }
             try {
-                mTarget.sendIntent(mContext, 0, fillIn, null, null);
+                final BroadcastOptions options = BroadcastOptions.makeBasic();
+                options.setPendingIntentBackgroundActivityLaunchAllowed(false);
+                mTarget.sendIntent(mContext, 0, fillIn, null /* onFinished*/,
+                        null /* handler */, null /* requiredPermission */, options.toBundle());
             } catch (SendIntentException ignored) {
             }
         }

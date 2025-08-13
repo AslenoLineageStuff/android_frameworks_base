@@ -236,6 +236,7 @@ public abstract class Context {
             BIND_IMPORTANT,
             BIND_ADJUST_WITH_ACTIVITY,
             BIND_NOT_PERCEPTIBLE,
+            BIND_DENY_ACTIVITY_STARTS,
             BIND_INCLUDE_CAPABILITIES
     })
     @Retention(RetentionPolicy.SOURCE)
@@ -348,6 +349,14 @@ public abstract class Context {
 
     /***********    Public flags above this line ***********/
     /***********    Hidden flags below this line ***********/
+
+    /**
+     * Flag for {@link #bindService}: If binding from an app that is visible, the bound service is
+     * allowed to start an activity from background. Add a flag so that this behavior can be opted
+     * out.
+     * @hide
+     */
+    public static final int BIND_DENY_ACTIVITY_STARTS = 0X000004000;
 
     /**
      * Flag for {@link #bindService}: This flag is intended to be used only by the system to adjust
@@ -5187,11 +5196,29 @@ public abstract class Context {
      */
     @SystemApi
     @TestApi
+    @NonNull
     public Context createPackageContextAsUser(
-            String packageName, @CreatePackageOptions int flags, UserHandle user)
+            @NonNull String packageName, @CreatePackageOptions int flags, @NonNull UserHandle user)
             throws PackageManager.NameNotFoundException {
         if (Build.IS_ENG) {
             throw new IllegalStateException("createPackageContextAsUser not overridden!");
+        }
+        return this;
+    }
+
+    /**
+     * Similar to {@link #createPackageContext(String, int)}, but for the own package with a
+     * different {@link UserHandle}. For example, {@link #getContentResolver()}
+     * will open any {@link Uri} as the given user.
+     *
+     * @hide
+     */
+    @SystemApi
+    @TestApi
+    @NonNull
+    public Context createContextAsUser(@NonNull UserHandle user, @CreatePackageOptions int flags) {
+        if (Build.IS_ENG) {
+            throw new IllegalStateException("createContextAsUser not overridden!");
         }
         return this;
     }

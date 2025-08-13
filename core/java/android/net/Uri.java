@@ -1194,13 +1194,16 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
         }
 
         static Uri readFrom(Parcel parcel) {
-            return new HierarchicalUri(
-                parcel.readString(),
-                Part.readFrom(parcel),
-                PathPart.readFrom(parcel),
-                Part.readFrom(parcel),
-                Part.readFrom(parcel)
-            );
+            final String scheme = parcel.readString();
+            final Part authority = Part.readFrom(parcel);
+            // In RFC3986 the path should be determined based on whether there is a scheme or
+            // authority present (https://www.rfc-editor.org/rfc/rfc3986.html#section-3.3).
+            final boolean hasSchemeOrAuthority =
+                    (scheme != null && scheme.length() > 0) || !authority.isEmpty();
+            final PathPart path = PathPart.readFrom(hasSchemeOrAuthority, parcel);
+            final Part query = Part.readFrom(parcel);
+            final Part fragment = Part.readFrom(parcel);
+            return new HierarchicalUri(scheme, authority, path, query, fragment);
         }
 
         public int describeContents() {
@@ -1377,7 +1380,11 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
          * @param scheme name or {@code null} if this is a relative Uri
          */
         public Builder scheme(String scheme) {
-            this.scheme = scheme;
+            if (scheme != null) {
+                this.scheme = scheme.replace("://", "");
+            } else {
+                this.scheme = null;
+            }
             return this;
         }
 
@@ -2261,6 +2268,11 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
                 default:
                     throw new IllegalArgumentException("Unknown representation: " + representation);
             }
+        }
+
+        static PathPart readFrom(boolean hasSchemeOrAuthority, Parcel parcel) {
+            final PathPart path = readFrom(parcel);
+            return hasSchemeOrAuthority ? makeAbsolute(path) : path;
         }
 
         /**

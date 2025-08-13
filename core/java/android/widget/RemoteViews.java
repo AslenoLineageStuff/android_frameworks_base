@@ -554,6 +554,12 @@ public class RemoteViews implements Parcelable, Filter {
                 mActions.get(i).visitUris(visitor);
             }
         }
+        if (mLandscape != null) {
+            mLandscape.visitUris(visitor);
+        }
+        if (mPortrait != null) {
+            mPortrait.visitUris(visitor);
+        }
     }
 
     private static void visitIconUri(Icon icon, @NonNull Consumer<Uri> visitor) {
@@ -753,6 +759,13 @@ public class RemoteViews implements Parcelable, Filter {
         @Override
         public int getActionTag() {
             return SET_REMOTE_VIEW_ADAPTER_LIST_TAG;
+        }
+
+        @Override
+        public void visitUris(@NonNull Consumer<Uri> visitor) {
+            for (RemoteViews remoteViews : list) {
+                remoteViews.visitUris(visitor);
+            }
         }
 
         int viewTypeCount;
@@ -1656,6 +1669,11 @@ public class RemoteViews implements Parcelable, Filter {
         @Override
         public int getActionTag() {
             return VIEW_GROUP_ACTION_ADD_TAG;
+        }
+
+        @Override
+        public final void visitUris(@NonNull Consumer<Uri> visitor) {
+            mNestedViews.visitUris(visitor);
         }
     }
 
@@ -3667,8 +3685,18 @@ public class RemoteViews implements Parcelable, Filter {
                 return context;
             }
             try {
-                return context.createApplicationContext(mApplication,
+                // Use PackageManager as the source of truth for application information, rather
+                // than the parceled ApplicationInfo provided by the app.
+                ApplicationInfo sanitizedApplication =
+                        context.getPackageManager().getApplicationInfoAsUser(
+                                mApplication.packageName, 0,
+                                UserHandle.getUserId(mApplication.uid));
+                Context applicationContext = context.createApplicationContext(
+                        sanitizedApplication,
                         Context.CONTEXT_RESTRICTED);
+                // Get the correct apk paths while maintaining the current context's configuration.
+                return applicationContext.createConfigurationContext(
+                        context.getResources().getConfiguration());
             } catch (NameNotFoundException e) {
                 Log.e(LOG_TAG, "Package name " + mApplication.packageName + " not found");
             }

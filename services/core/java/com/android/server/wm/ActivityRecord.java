@@ -781,6 +781,12 @@ final class ActivityRecord extends ConfigurationContainer {
             }
             schedulePictureInPictureModeChanged(newConfig);
             scheduleMultiWindowModeChanged(newConfig);
+            if (inPictureInPictureMode && mAppWindowToken != null && mAppWindowToken.findMainWindow() == null) {
+                // Prevent malicious app entering PiP without valid WindowState, which can in turn
+                // result a non-touchable PiP window since the InputConsumer for PiP requires it.
+                EventLog.writeEvent(0x534e4554, "265293293", -1, "");
+                mAppWindowToken.removeImmediately();
+            }
         }
     }
 
@@ -1235,7 +1241,7 @@ final class ActivityRecord extends ConfigurationContainer {
         newTask.addActivityAtIndex(position, this);
     }
 
-    private boolean isHomeIntent(Intent intent) {
+    static boolean isHomeIntent(Intent intent) {
         return ACTION_MAIN.equals(intent.getAction())
                 && (intent.hasCategory(CATEGORY_HOME)
                 || intent.hasCategory(CATEGORY_SECONDARY_HOME))

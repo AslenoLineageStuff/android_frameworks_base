@@ -251,8 +251,8 @@ public final class JobServiceContext implements ServiceConnection {
             try {
                 binding = mContext.bindServiceAsUser(intent, this,
                         Context.BIND_AUTO_CREATE | Context.BIND_NOT_FOREGROUND
-                        | Context.BIND_NOT_PERCEPTIBLE,
-                        new UserHandle(job.getUserId()));
+                        | Context.BIND_NOT_PERCEPTIBLE | Context.BIND_DENY_ACTIVITY_STARTS,
+                        UserHandle.of(job.getUserId()));
             } catch (SecurityException e) {
                 // Some permission policy, for example INTERACT_ACROSS_USERS and
                 // android:singleUser, can result in a SecurityException being thrown from

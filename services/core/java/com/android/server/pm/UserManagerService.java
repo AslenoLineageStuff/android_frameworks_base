@@ -2417,15 +2417,19 @@ public class UserManagerService extends IUserManager.Stub {
         // Write seed data
         if (userData.persistSeedData) {
             if (userData.seedAccountName != null) {
-                serializer.attribute(null, ATTR_SEED_ACCOUNT_NAME, userData.seedAccountName);
+                serializer.attribute(null, ATTR_SEED_ACCOUNT_NAME,
+                        truncateString(userData.seedAccountName,
+                                UserManager.MAX_ACCOUNT_STRING_LENGTH));
             }
             if (userData.seedAccountType != null) {
-                serializer.attribute(null, ATTR_SEED_ACCOUNT_TYPE, userData.seedAccountType);
+                serializer.attribute(null, ATTR_SEED_ACCOUNT_TYPE,
+                        truncateString(userData.seedAccountType,
+                                UserManager.MAX_ACCOUNT_STRING_LENGTH));
             }
         }
         if (userInfo.name != null) {
             serializer.startTag(null, TAG_NAME);
-            serializer.text(userInfo.name);
+            serializer.text(truncateString(userInfo.name, UserManager.MAX_USER_NAME_LENGTH));
             serializer.endTag(null, TAG_NAME);
         }
         synchronized (mRestrictionsLock) {
@@ -2464,6 +2468,13 @@ public class UserManagerService extends IUserManager.Stub {
         serializer.endTag(null, TAG_USER);
 
         serializer.endDocument();
+    }
+
+    private String truncateString(String original, int limit) {
+        if (original == null || original.length() <= limit) {
+            return original;
+        }
+        return original.substring(0, limit);
     }
 
     /*
@@ -2808,7 +2819,7 @@ public class UserManagerService extends IUserManager.Stub {
     private UserInfo createUserInternalUncheckedNoTracing(@Nullable String name,
             @UserInfoFlag int flags, @UserIdInt int parentId, boolean preCreate,
             @Nullable String[] disallowedPackages, @NonNull TimingsTraceLog t) {
-
+        String truncatedName = truncateString(name, UserManager.MAX_USER_NAME_LENGTH);
         // First try to use a pre-created user (if available).
         // NOTE: currently we don't support pre-created managed profiles
         if (!preCreate && (parentId < 0 && !UserInfo.isManagedProfile(flags))) {
@@ -2835,7 +2846,7 @@ public class UserManagerService extends IUserManager.Stub {
                             + UserInfo.flagsToString(preCreatedUser.flags)
                             + " new-user flags: " + UserInfo.flagsToString(flags));
                 }
-                preCreatedUser.name = name;
+                preCreatedUser.name = truncatedName;
                 preCreatedUser.preCreated = false;
                 preCreatedUser.creationTime = getCreationTime();
 
@@ -2934,7 +2945,7 @@ public class UserManagerService extends IUserManager.Stub {
                         flags |= UserInfo.FLAG_EPHEMERAL;
                     }
 
-                    userInfo = new UserInfo(userId, name, null, flags);
+                    userInfo = new UserInfo(userId, truncatedName, null, flags);
                     userInfo.serialNumber = mNextSerialNumber++;
                     userInfo.creationTime = getCreationTime();
                     userInfo.partial = true;
@@ -3866,9 +3877,14 @@ public class UserManagerService extends IUserManager.Stub {
                     Slog.e(LOG_TAG, "No such user for settings seed data u=" + userId);
                     return;
                 }
-                userData.seedAccountName = accountName;
-                userData.seedAccountType = accountType;
-                userData.seedAccountOptions = accountOptions;
+                userData.seedAccountName = truncateString(accountName,
+                        UserManager.MAX_ACCOUNT_STRING_LENGTH);
+                userData.seedAccountType = truncateString(accountType,
+                        UserManager.MAX_ACCOUNT_STRING_LENGTH);
+                if (accountOptions != null && accountOptions.isBundleContentsWithinLengthLimit(
+                        UserManager.MAX_ACCOUNT_OPTIONS_LENGTH)) {
+                    userData.seedAccountOptions = accountOptions;
+                }
                 userData.persistSeedData = persist;
             }
             if (persist) {

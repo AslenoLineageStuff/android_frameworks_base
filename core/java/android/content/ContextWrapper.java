@@ -885,6 +885,12 @@ public class ContextWrapper extends Context {
 
     /** @hide */
     @Override
+    public Context createContextAsUser(UserHandle user, @CreatePackageOptions int flags) {
+        return mBase.createContextAsUser(user, flags);
+    }
+
+    /** @hide */
+    @Override
     @UnsupportedAppUsage
     public Context createApplicationContext(ApplicationInfo application,
             int flags) throws PackageManager.NameNotFoundException {
