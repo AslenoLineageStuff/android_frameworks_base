@@ -35,7 +35,7 @@ import java.util.Map;
 public final class PixelPropsUtils {
 
     private static final String TAG = PixelPropsUtils.class.getSimpleName();
-    private static final String DEVICE = "ro.lineage.device";
+    private static final String DEVICE = "ro.product.device";
     private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
 
     private static final String SPOOF_PIXEL_GAMES = "persist.sys.pixelprops.games";
